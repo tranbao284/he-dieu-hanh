@@ -21,6 +21,9 @@ struct run {
 struct {
   struct spinlock lock;
   struct run *freelist;
+
+  int ref_count[PHYSTOP / PGSIZE]; // khai bao bien dem so trang
+
 } kmem;
 
 void
@@ -35,8 +38,12 @@ freerange(void *pa_start, void *pa_end)
 {
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
-  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
+  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE){
+    
+    //tranh bien dem am khi moi khoi dong 
+    kmem.ref_count [(uint64)p / PGSIZE] =1;
     kfree(p);
+  }
 }
 
 // Free the page of physical memory pointed at by pa,
@@ -51,6 +58,18 @@ kfree(void *pa)
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
+
+  //xu ly bien dem khi 1 tien trinh ket thuc  
+  //dat phan xu ly bien ref_count trong acquire/release de chi 1 CPU co the sua tai 1 thoi diem
+  acquire(&kmem.lock);
+  kmem.ref_count[(uint64)pa / PGSIZE] -= 1; // giam bien dem
+  if(kmem.ref_count[(uint64)pa / PGSIZE] > 0) {
+    release(&kmem.lock);
+    return; //neu con tien trinh su dung thi return khong xoa RAM
+  }
+  release(&kmem.lock);
+  
+  
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
 
@@ -76,7 +95,20 @@ kalloc(void)
     kmem.freelist = r->next;
   release(&kmem.lock);
 
-  if(r)
+  if(r){
     memset((char*)r, 5, PGSIZE); // fill with junk
+
+    //xu ly khi cap phat RAM moi
+    acquire(&kmem.lock);
+    kmem.ref_count[(uint64)r / PGSIZE] =1;
+    release(&kmem.lock);
+  }
   return (void*)r;
+}
+
+// khai bao ham kaddref() 
+void kaddref(void *pa){
+  acquire(&kmem.lock);
+  kmem.ref_count[(uint64)pa / PGSIZE] +=1;
+  release(&kmem.lock);
 }

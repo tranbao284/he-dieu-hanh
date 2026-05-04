@@ -71,7 +71,42 @@ usertrap(void)
   } else if((r_scause() == 15 || r_scause() == 13) &&
             vmfault(p->pagetable, r_stval(), (r_scause() == 13)? 1 : 0) != 0) {
     // page fault on lazily-allocated page
-  } else {
+  } 
+
+  //xu ly loi page fault khi user write
+  else if(r_scause() == 15) { // Store Page Fault
+    uint64 fault_va = r_stval(); // lay dia chi ao gay loi
+    
+    // kiem tra co nam trong gh tien trinh khong
+    if(fault_va >= p->sz) {
+      p->killed = 1;
+    } else {
+      fault_va = PGROUNDDOWN(fault_va);
+      pte_t *pte = walk(p->pagetable, fault_va, 0);
+      
+      // xac nhan hop le
+      if(pte != 0 && (*pte & PTE_V) && (*pte & PTE_COW)) {
+        char *mem = kalloc(); // xin RAM
+        if(mem == 0) { 
+          p->killed = 1; // bao loi neu het RAM
+        } else {
+          uint64 pa = PTE2PA(*pte); 
+          memmove(mem, (char*)pa, PGSIZE); // Copy 
+          
+          // cap nhat PTE
+          uint flags = PTE_FLAGS(*pte);
+          flags = (flags & ~PTE_COW) | PTE_W;
+          *pte = PA2PTE(mem) | flags;
+          
+          kfree((void*)pa); // giai phong page cu
+        }
+      } else {
+        p->killed = 1;
+      }
+    }
+  }
+
+  else {
     printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
     printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
     setkilled(p);
