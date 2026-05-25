@@ -61,6 +61,7 @@ void            kfree(void *);
 void            kinit(void);
 
 void            kaddref(void *); //khai bao ham kaddref()
+uint64          freemem(void);
 
 // log.c
 void            initlog(int, struct superblock*);

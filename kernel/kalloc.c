@@ -112,3 +112,19 @@ void kaddref(void *pa){
   kmem.ref_count[(uint64)pa / PGSIZE] +=1;
   release(&kmem.lock);
 }
+
+// Ham dem so byte RAM con trong
+uint64 freemem(void) {
+  struct run *r;
+  uint64 free_bytes = 0;
+  
+  acquire(&kmem.lock);
+  r = kmem.freelist;
+  while(r) {
+    free_bytes += PGSIZE; // Mỗi trang là 4096 bytes
+    r = r->next;
+  }
+  release(&kmem.lock);
+  
+  return free_bytes;
+}
